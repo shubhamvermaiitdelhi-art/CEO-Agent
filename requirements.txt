@@ -1,5 +1,6 @@
 streamlit
 google-generativeai
-python-pptx
-requests
 openai
+python-pptx
+matplotlib
+pandas
