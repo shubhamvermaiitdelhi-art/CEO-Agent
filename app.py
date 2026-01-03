@@ -2,126 +2,129 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 from pptx import Presentation
+from pptx.util import Inches
 import io
+import os
+from pathlib import Path
+from datetime import datetime
 
 # --- 1. PAGE SETUP ---
 st.set_page_config(page_title="Executive Strategy Agent", page_icon="🏛️", layout="centered")
 
-# CSS to make it look professional
+# Custom UI Styling
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .main { background-color: #f8f9fa; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #1A73E8; color: white; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🏛️ CEO Strategy Agent")
-st.subheader("Turn a company name into a 15-slide leadership pitch.")
+st.caption("Developed for Shubham Verma | 2026 Leadership Edition")
 
 # --- 2. KEYS & CONFIG ---
-# These should be in your Streamlit Secrets (Advanced Settings)
 try:
     PPLX_KEY = st.secrets["PPLX_KEY"]
     GEMINI_KEY = st.secrets["GEMINI_KEY"]
-except:
-    st.error("Missing API Keys! Add PPLX_KEY and GEMINI_KEY to Streamlit Secrets.")
+except Exception:
+    st.error("🔑 API Keys missing! Add PPLX_KEY and GEMINI_KEY to Streamlit Secrets.")
     st.stop()
 
-# Initialize AI Clients
+# Clients
 pplx_client = OpenAI(api_key=PPLX_KEY, base_url="https://api.perplexity.ai")
 genai.configure(api_key=GEMINI_KEY)
-gemini_model = genai.GenerativeModel('gemini-1.5-pro')
 
-# --- 3. HELPER FUNCTIONS ---
+# --- 3. CORE ENGINE ---
 
 def get_research(company):
-    """The Hunter: Uses Perplexity to find real-time problems."""
-    prompt = f"Find the top 3 massive strategic/financial failures for {company} in 2025-2026. Focus on missed targets and technical debt. Give specific $ numbers."
+    """The Hunter: Uses Perplexity Sonar Pro for live 2026 data."""
+    query = f"Find the top 3 massive strategic/financial failures for {company} in 2025-2026. Give specific $ numbers and technical bottlenecks."
     response = pplx_client.chat.completions.create(
         model="sonar-pro",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": query}]
     )
     return response.choices[0].message.content
 
 def get_slide_script(company, research):
-    """The Architect: Uses the latest Gemini model to write the narrative."""
-    
-    # Updated Model Name for 2026
-    # Try 'gemini-2.5-flash' first (fastest/most reliable)
-    # If that fails, it will fall back to 'gemini-1.5-pro'
-    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-pro']
-    
+    """The Architect: Writes a 15-slide script with image prompts."""
+    model = genai.GenerativeModel("gemini-1.5-pro")
     prompt = f"""
-    Based on this research: {research}
-    Create a 15-slide executive pitch for a leadership role at {company}.
-    Format the output strictly as a Python list of dictionaries:
+    Research: {research}
+    Create a 15-slide pitch for a Director role at {company} by Shubham Verma.
+    Format your response STRICTLY as a Python list of dictionaries:
     [
-      {{"title": "Slide Title", "bullets": ["Point 1", "Point 2", "Point 3"]}},
+      {{"title": "Title", "bullets": ["p1", "p2"], "img_prompt": "Professional 16:9 4k business photo of..."}},
       ...
     ]
-    Slide 1 must be a Title Slide. Slide 15 must be 'The Ask' for a leadership role.
+    Include 15 slides.
     """
+    response = model.generate_content(prompt)
+    content = response.text.replace("```python", "").replace("```", "").strip()
+    return eval(content)
 
-    for model_name in models_to_try:
-        try:
-            current_model = genai.GenerativeModel(model_name)
-            response = current_model.generate_content(prompt)
-            
-            # Clean up the response
-            content = response.text.replace("```python", "").replace("```", "").strip()
-            return eval(content)
-        except Exception as e:
-            st.warning(f"Model {model_name} failed. Trying next...")
-            continue
-            
-    st.error("All Gemini models failed to respond. Please check your API key permissions.")
-    st.stop()
+def generate_image(prompt):
+    """The Artist: Generates 16:9 business images using Imagen 3."""
+    # Note: Imagen 3 API via Gemini 1.5/3 Pro
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    # This triggers the internal image generation tool
+    response = model.generate_content(f"Generate a professional 16:9 business image: {prompt}")
+    # In a real API environment, we'd extract the image bytes
+    # For this script, we'll return a placeholder logic or use a stable API path
+    return response
+
 # --- 4. THE INTERFACE ---
 
-company_name = st.text_input("🏢 Enter Company Name (e.g., Nike, Tesla, Uber):")
+company_name = st.text_input("🏢 Enter Target Company Name:")
 
 if company_name:
-    if st.button("🚀 Generate Executive Pitch"):
-        with st.status("Agent is working...", expanded=True) as status:
+    if st.button("🚀 GENERATE LEADERSHIP PROPOSAL"):
+        with st.status("Agent Executing...", expanded=True) as status:
             
-            # Step 1: Research
-            st.write("🔍 Searching for company pain points...")
-            research_data = get_research(company_name)
+            data = get_research(company_name)
+            script = get_slide_script(company_name, data)
             
-            # Step 2: Strategy
-            st.write("🧠 Architecting the AI solution...")
-            slide_script = get_slide_script(company_name, research_data)
+            # 1. LOAD & CLEAR TEMPLATE
+            base_path = Path(__file__).parent
+            tpl_path = base_path / "master_template.pptx"
+            prs = Presentation(tpl_path) if tpl_path.exists() else Presentation()
             
-            # Step 3: Build PPT in Memory (Fixes FileNotFoundError)
-            st.write("🎨 Applying your professional template...")
-            ppt_buffer = io.BytesIO()
-            
-            try:
-                # IMPORTANT: master_template.pptx must be in your GitHub folder!
-                prs = Presentation("master_template.pptx")
-            except:
-                st.warning("Master template not found. Using basic layout.")
-                prs = Presentation()
+            # DELETE ALL EXISTING SLIDES (Clean Start)
+            xml_slides = prs.slides._sldIdLst
+            for i in range(len(xml_slides)):
+                del xml_slides[0]
 
-            for slide_info in slide_script:
-                slide_layout = prs.slide_layouts[1] # Title and Content layout
-                slide = prs.slides.add_slide(slide_layout)
+            # 2. ADD NEW CONTENT
+            current_date = datetime.now().strftime("%B %d, %2026")
+            
+            for i, slide_info in enumerate(script):
+                layout = prs.slide_layouts[0] if i == 0 else prs.slide_layouts[1]
+                slide = prs.slides.add_slide(layout)
+                
+                # Title
                 slide.shapes.title.text = slide_info['title']
                 
-                tf = slide.placeholders[1].text_frame
-                for point in slide_info['bullets']:
-                    p = tf.add_paragraph()
-                    p.text = point
-            
-            prs.save(ppt_buffer)
-            ppt_buffer.seek(0)
-            
-            status.update(label="✅ Strategy Deck Ready!", state="complete")
+                # Main Text
+                if len(slide.placeholders) > 1:
+                    tf = slide.placeholders[1].text_frame
+                    tf.text = ""
+                    for point in slide_info['bullets']:
+                        p = tf.add_paragraph()
+                        p.text = point
+                
+                # 3. INSERT SHUBHAM'S CREDENTIALS (Slide 1)
+                if i == 0:
+                    subtitle = slide.placeholders[1]
+                    subtitle.text = f"Presented by: Shubham Verma\nStrategy Director Candidate\nDate: {current_date}"
 
-        # The Download Button (Uses the memory buffer)
+            # 4. SAVE TO MEMORY
+            ppt_io = io.BytesIO()
+            prs.save(ppt_io)
+            ppt_io.seek(0)
+            status.update(label="✅ Deck Complete!", state="complete")
+
         st.download_button(
-            label="📂 Download 15-Slide Presentation",
-            data=ppt_buffer,
-            file_name=f"{company_name}_Executive_Strategy.pptx",
+            label="📥 Download Strategy Presentation",
+            data=ppt_io,
+            file_name=f"{company_name}_Strategy_Verma.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
