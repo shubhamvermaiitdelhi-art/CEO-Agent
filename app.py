@@ -4,41 +4,41 @@ from openai import OpenAI
 from pptx import Presentation
 from pptx.util import Inches
 import io
-import os
 from pathlib import Path
 from datetime import datetime
-import PIL.Image
 
 # --- 1. PAGE SETUP ---
 st.set_page_config(page_title="Executive Strategy Agent", page_icon="🏛️", layout="centered")
 
+# CSS to give the app a BCG/McKinsey "clean" feel
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #1A73E8; color: white; font-weight: bold; }
+    .main { background-color: #ffffff; color: #00453c; }
+    .stButton>button { background-color: #00453c; color: white; border-radius: 4px; border: none; font-weight: bold; }
+    .stTextInput>div>div>input { border-radius: 4px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏛️ CEO Strategy Agent")
-st.caption("Strategic Advisor: Shubham Verma | 2026 Edition")
+st.title("Strategic Advisor Agent")
+st.write("Candidate: **Shubham Verma** | Strategy & AI Leadership")
 
 # --- 2. KEYS & CONFIG ---
 try:
     PPLX_KEY = st.secrets["PPLX_KEY"]
     GEMINI_KEY = st.secrets["GEMINI_KEY"]
-except Exception:
-    st.error("🔑 API Keys missing! Add PPLX_KEY and GEMINI_KEY to Streamlit Secrets.")
+except:
+    st.error("🔑 Keys missing in Streamlit Secrets!")
     st.stop()
 
-# Initialize AI Clients
+# Clients
 pplx_client = OpenAI(api_key=PPLX_KEY, base_url="https://api.perplexity.ai")
 genai.configure(api_key=GEMINI_KEY)
 
 # --- 3. HELPER FUNCTIONS ---
 
 def get_research(company):
-    """The Hunter: Uses Perplexity Sonar Pro for current market insights."""
-    query = f"Research {company} for 2026. Identify 3 massive financial/operational leaks ($ numbers) and the top technical bottleneck."
+    """Hunter: Real-time BCG-style problem identification."""
+    query = f"Provide a SWOT analysis for {company} in 2026 focusing on financial leaks and technical debt. Identify one $100M+ problem."
     response = pplx_client.chat.completions.create(
         model="sonar-pro",
         messages=[{"role": "user", "content": query}]
@@ -46,92 +46,92 @@ def get_research(company):
     return response.choices[0].message.content
 
 def get_slide_script(company, research):
-    """The Architect: Writes a 15-slide script using Gemini 3."""
-    # Using 2026 stable model names
-    model = genai.GenerativeModel("gemini-3-flash-preview")
+    """Architect: Writes the 15-slide script."""
+    # Using the most robust model for logic
+    model = genai.GenerativeModel("gemini-1.5-pro")
     prompt = f"""
-    Based on research: {research}
-    Create a 15-slide pitch for a Director role at {company} for candidate Shubham Verma.
-    Output a Python list of dicts: [{{'title': '...', 'bullets': ['...'], 'img_prompt': '...'}}]
-    Slide 1: Title Slide. Slide 15: Execution Ask.
+    You are Shubham Verma, a Strategy Director candidate. 
+    Research: {research}
+    Create a 15-slide pitch deck for {company}. 
+    Format: Python list of dicts: [{{'title': '...', 'bullets': ['...'], 'img_prompt': '...'}}]
+    Slides: 1:Title, 2:Executive Summary, 3-5:Situation, 6-10:AI Solution, 11-14:ROI, 15:The Ask.
     """
     response = model.generate_content(prompt)
-    content = response.text.replace("```python", "").replace("```", "").strip()
-    return eval(content)
+    return eval(response.text.replace("```python", "").replace("```", "").strip())
 
-def generate_and_save_image(prompt):
-    """The Artist: Generates images via Gemini 3 (Imagen)."""
-    # Uses the Gemini 3 Pro model which supports image generation in 2026
-    image_model = genai.GenerativeModel("gemini-3-pro-image-preview")
-    try:
-        response = image_model.generate_content(f"Generate a professional, minimalist business photo: {prompt}")
-        # Assuming response contains a PIL image object in 2026 SDK
-        image = response.candidates[0].content.parts[0].inline_data.data # Simplified for logic
-        return io.BytesIO(image)
-    except:
-        return None
+def get_best_layout(prs, keywords):
+    """Finds BCG master layouts by keyword search."""
+    for layout in prs.slide_layouts:
+        for word in keywords:
+            if word.lower() in layout.name.lower():
+                return layout
+    return prs.slide_layouts[1] # Default fallback
 
-# --- 4. THE INTERFACE ---
+# --- 4. EXECUTION ---
 
-company_name = st.text_input("🏢 Enter Target Company Name:")
+target_company = st.text_input("🏢 Enter Company Name:")
 
-if company_name:
-    if st.button("🚀 GENERATE LEADERSHIP PROPOSAL"):
+if target_company:
+    if st.button("🚀 GENERATE BCG-STYLE PROPOSAL"):
         with st.status("Agent Executing...", expanded=True) as status:
             
-            # Step 1: Research & Scripting
-            data = get_research(company_name)
-            script = get_slide_script(company_name, data)
+            # Data & Script
+            data = get_research(target_company)
+            script = get_slide_script(target_company, data)
             
-            # Step 2: Load & Purge Master PPT
-            base_path = Path(__file__).parent
-            tpl_path = base_path / "master_template.pptx"
+            # Load Template
+            tpl_path = Path(__file__).parent / "master_template.pptx"
             prs = Presentation(tpl_path) if tpl_path.exists() else Presentation()
             
-            # Delete all existing slides to overwrite content
+            # 1. DELETE ALL EXISTING SLIDES (Clean Start for your BCG Template)
             for _ in range(len(prs.slides)):
                 rId = prs.slides._sldIdLst[0].rId
                 prs.part.drop_rel(rId)
                 del prs.slides._sldIdLst[0]
 
-            # Step 3: Populate New Slides
-            current_date = datetime.now().strftime("%B %d, 2026")
+            # 2. POPULATE
+            today = datetime.now().strftime("%B %d, 2026")
             
-            for i, slide_info in enumerate(script):
-                layout_idx = 0 if i == 0 else 1 # Title layout vs Content layout
-                slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+            for i, s_data in enumerate(script):
+                # Choose layout based on BCG naming conventions
+                if i == 0:
+                    layout = get_best_layout(prs, ["Title", "Cover", "Intro"])
+                else:
+                    layout = get_best_layout(prs, ["Content", "Bullet", "Body"])
                 
-                # Header
-                slide.shapes.title.text = slide_info['title']
+                slide = prs.slides.add_slide(layout)
                 
-                # Bullets
-                if len(slide.placeholders) > 1:
-                    tf = slide.placeholders[1].text_frame
+                # Set Title
+                if slide.shapes.title:
+                    slide.shapes.title.text = s_data['title']
+                
+                # Find the main content placeholder (not the title)
+                body_ph = None
+                for ph in slide.placeholders:
+                    if ph.placeholder_format.idx != 0:
+                        body_ph = ph
+                        break
+                
+                if body_ph and body_ph.has_text_frame:
+                    tf = body_ph.text_frame
                     tf.text = ""
-                    for bullet in slide_info['bullets']:
+                    for bullet in s_data['bullets']:
                         p = tf.add_paragraph()
                         p.text = bullet
                 
-                # Image Generation and Insertion
-                img_data = generate_and_save_image(slide_info['img_prompt'])
-                if img_data:
-                    # Place image on the right side of the slide
-                    slide.shapes.add_picture(img_data, Inches(6), Inches(1.5), height=Inches(4.5))
-                
-                # Branding Slide 1
-                if i == 0:
-                    body = slide.placeholders[1]
-                    body.text = f"Prepared for CEO of {company_name}\nBy: Shubham Verma\nDate: {current_date}"
+                # Personal Branding Slide 1
+                if i == 0 and body_ph:
+                    body_ph.text = f"Presented to the CEO of {target_company}\nBy: Shubham Verma\nStrategy Director Candidate\nDate: {today}"
 
-            # Step 4: Finalize
+            # 3. SAVE
             ppt_io = io.BytesIO()
             prs.save(ppt_io)
             ppt_io.seek(0)
-            status.update(label="✅ Presentation Ready!", state="complete")
+            status.update(label="✅ Pitch Deck Complete!", state="complete")
 
         st.download_button(
             label="📥 Download Strategy Deck",
             data=ppt_io,
-            file_name=f"{company_name}_Strategy_Verma.pptx",
+            file_name=f"{target_company}_Pitch_Verma.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
