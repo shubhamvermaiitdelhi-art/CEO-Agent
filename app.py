@@ -44,7 +44,13 @@ def get_research(company):
     return response.choices[0].message.content
 
 def get_slide_script(company, research):
-    """The Architect: Uses Gemini to write the narrative."""
+    """The Architect: Uses the latest Gemini model to write the narrative."""
+    
+    # Updated Model Name for 2026
+    # Try 'gemini-2.5-flash' first (fastest/most reliable)
+    # If that fails, it will fall back to 'gemini-1.5-pro'
+    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-pro']
+    
     prompt = f"""
     Based on this research: {research}
     Create a 15-slide executive pitch for a leadership role at {company}.
@@ -55,11 +61,21 @@ def get_slide_script(company, research):
     ]
     Slide 1 must be a Title Slide. Slide 15 must be 'The Ask' for a leadership role.
     """
-    response = gemini_model.generate_content(prompt)
-    # Clean up the response to ensure it's valid Python code
-    content = response.text.replace("```python", "").replace("```", "").strip()
-    return eval(content)
 
+    for model_name in models_to_try:
+        try:
+            current_model = genai.GenerativeModel(model_name)
+            response = current_model.generate_content(prompt)
+            
+            # Clean up the response
+            content = response.text.replace("```python", "").replace("```", "").strip()
+            return eval(content)
+        except Exception as e:
+            st.warning(f"Model {model_name} failed. Trying next...")
+            continue
+            
+    st.error("All Gemini models failed to respond. Please check your API key permissions.")
+    st.stop()
 # --- 4. THE INTERFACE ---
 
 company_name = st.text_input("🏢 Enter Company Name (e.g., Nike, Tesla, Uber):")
